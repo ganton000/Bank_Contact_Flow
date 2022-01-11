@@ -285,7 +285,7 @@ def validate_followup_information(slots):
             return build_validation_result(
                 False,
                 'firstName',
-                f"<speak> Sorry, I did not understand, May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
+                "<speak> Sorry, I did not understand, May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
         )
 
         return response
@@ -322,7 +322,7 @@ def validate_followup_information(slots):
                 'pin',
                 'Sorry this is not a valid pin. Please enter your four digit pin number.'
             )
-        if Decimal(user_pin) != get_item_dynamodb(table_name, accountNumber['value']['interpretedValue'], 'Pin'):
+        if Decimal(user_pin) != get_item_dynamodb(accountNumber['value']['interpretedValue'], 'Pin'):
             return build_validation_result(
                 False,
                 'pin',
@@ -348,7 +348,7 @@ def validate_replace_card_information(slots):
         return build_validation_result(
             False,
             'firstName',
-            f"<speak>  I did not understand. May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
+            "<speak>  I did not understand. May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
         )
 
     
@@ -463,11 +463,56 @@ def getValid_AccountNumber():
 """ --- Functions that control the bot's behavior --- """
 
 def Greeting(intent_request):
-    pass
+
+    #Initialize required response parameters
+    intent_name = intent_request['sessionState']['intent']['name']
+    session_attributes = get_session_attributes(intent_request)
+    source = intent_request['invocationSource']
+    confirmation_status = intent_request['sessionState']['intent']['confirmationState']
+    slots = get_slots(intent_request)
+
+    logger.info(f'source={source}, slots={slots}, confirmation_status={confirmation_status}')
+
+
+    firstName = try_ex(lambda: slots['firstName'])
+
+    if source == 'DialogCodeHook':
+
+        if firstName and not isValid_Word(firstName['value']['interpretedValue']):
+            slots['firstName'] = None
+            return {
+            'sessionState':{
+                'sessionAttributes': session_attributes,
+                'dialogAction':{
+                    'slotToElicit': 'firstName',
+                    'type':'ElicitSlot'
+                },
+                'intent':{
+                    'confirmationState': 'Denied',
+                    'name':intent_name,
+                    'slots':slots,
+                    'state':'InProgress'
+                }
+            },
+            'messages': [
+                "<speak> Sorry, I did not understand, May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
+            ]
+        }       
+        return delegate(intent_name,intent_request['sessionState']['intent']['slots'] ,session_attributes)
+
+    
+    logger.info(f'firstName={firstName}')
+
+    output = f'Nice to meet you {firstName}! How may I help you today?'
+    fulfillment_state = 'Fulfilled'
+
+    message = {'contentType':'PlainText', 'content':output}
+    
+    return close(intent_name, session_attributes, fulfillment_state, message)
+
+
 
 def CheckBalance(intent_request):
-
-    table_name = tbl_name
 
     #Initialize required response parameters
     intent_name = intent_request['sessionState']['intent']['name']
@@ -513,11 +558,9 @@ def CheckBalance(intent_request):
 
 
 def FollowupCheckBalance(intent_request):
-    
-    table_name = tbl_name
 
-    #Initialize required response parameters
-    
+
+    #Initialize required response parameters    
     intent_name = intent_request['sessionState']['intent']['name']
     session_attributes = get_session_attributes(intent_request)
     source = intent_request['invocationSource']
@@ -542,9 +585,8 @@ def FollowupCheckBalance(intent_request):
             'sessionAttributes': session_attributes,
             'dialogAction':{
                 'slotElicitationStyle': 'SpellByLetter',
-                'slotToElicit': 'LastName',
-                'type':'ElicitSlot',
-
+                'slotToElicit': 'firstName',
+                'type':'ElicitSlot'
             },
             'intent':{
                 'confirmationState': 'Denied',
@@ -553,7 +595,7 @@ def FollowupCheckBalance(intent_request):
                 'state':'InProgress'
             }
         },
-        'messages': validation_result['message']
+        'messages': [ validation_result['message'] ]
     }       
             else:
                 return elicit_slot(
@@ -584,7 +626,6 @@ def FollowupCheckBalance(intent_request):
 
 def ReplaceCard(intent_request):
     
-    table_name = tbl_name
 
     #Initialize required response parameters
     intent_name = intent_request['sessionState']['intent']['name']
@@ -611,9 +652,8 @@ def ReplaceCard(intent_request):
             'sessionAttributes': session_attributes,
             'dialogAction':{
                 'slotElicitationStyle': 'SpellByLetter',
-                'slotToElicit': 'LastName',
-                'type':'ElicitSlot',
-
+                'slotToElicit': 'firstName',
+                'type':'ElicitSlot'
             },
             'intent':{
                 'confirmationState': 'Denied',
@@ -622,7 +662,7 @@ def ReplaceCard(intent_request):
                 'state':'InProgress'
             }
         },
-        'messages': validation_result['message']
+        'messages': [ validation_result['message'] ]
     }       
             else:
                 return elicit_slot(
@@ -638,7 +678,7 @@ def ReplaceCard(intent_request):
 
 
     #Generate/Initalize Output values
-    cardNumber = Decimal(str(uuid.uuid4().int)[:16]
+    cardNumber = Decimal(str(uuid.uuid4().int))[:16]
     email_address = get_item_dynamodb(slots['accountNumber']['value']['interpretedValue'], 'Email Address')
     street_address = get_item_dynamodb(slots['acountNumber']['value']['interpretedValue'], 'Street Address')
     
@@ -668,17 +708,19 @@ def dispatch(intent_request):
     
 
     #Dispatch to bot's intent handlers
-    if intent_name == 'CheckBalance':
-        return CheckBalance(intent_request)
 
-    elif intent_name == 'Greeting':
+    if intent_name == 'Greeting':
         return Greeting(intent_request)
+
+    elif intent_name == 'ReplaceCard':
+        return ReplaceCard(intent_request)
+
+    elif intent_name == 'CheckBalance':
+        return CheckBalance(intent_request)
 
     elif intent_name == 'FollowupCheckBalance':
        return FollowupCheckBalance(intent_request)
 
-    elif intent_name == 'ReplaceCard':
-        return ReplaceCard(intent_request)
 
     raise Exception('Intent with name ' + intent_name + ' not supported')
 
