@@ -6,6 +6,8 @@ import logging
 import uuid 
 from decimal import Decimal
 
+from boto3 import session
+
 
 #Configure logger
 logger = logging.getLogger()
@@ -39,14 +41,10 @@ def get_session_attributes(intent_request):
     return {}
 
 
-
 def close(intent_name, session_attributes, fulfillment_state, message):
     '''Closes/Ends current Lex session with customer'''
 
     response = {
-        'messages': [
-            message
-        ],
         'sessionState': {
             'dialogAction': {
                 'type': 'Close'           
@@ -57,7 +55,10 @@ def close(intent_name, session_attributes, fulfillment_state, message):
                 'name': intent_name,
                 'state': fulfillment_state
             }
-        }
+        },
+        'messages': [
+            message
+        ],
     }
 
     return response
@@ -70,7 +71,8 @@ def elicit_intent(session_attributes, message):
     return {
         'sessionState':{
             'dialogAction':{
-                'type':'ElicitIntent'
+                'type':'ElicitIntent',
+                'slotToElicit': None
             },
             'sessionAttributes': session_attributes
         },
@@ -285,7 +287,7 @@ def validate_followup_information(slots):
             return build_validation_result(
                 False,
                 'firstName',
-                "<speak> Sorry, I did not understand, May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
+                "Sorry, I did not understand, May you repeat your first name to me once again."
         )
 
         return response
@@ -348,7 +350,7 @@ def validate_replace_card_information(slots):
         return build_validation_result(
             False,
             'firstName',
-            "<speak>  I did not understand. May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
+            "I did not understand. May you repeat your first name to me once again."
         )
 
     
@@ -480,35 +482,54 @@ def Greeting(intent_request):
 
         if firstName and not isValid_Word(firstName['value']['interpretedValue']):
             slots['firstName'] = None
-            return {
-            'sessionState':{
-                'sessionAttributes': session_attributes,
-                'dialogAction':{
-                    'slotToElicit': 'firstName',
-                    'type':'ElicitSlot'
-                },
-                'intent':{
-                    'confirmationState': 'Denied',
-                    'name':intent_name,
-                    'slots':slots,
-                    'state':'InProgress'
-                }
-            },
-            'messages': [
-                "<speak> Sorry, I did not understand, May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
-            ]
-        }       
+            return elicit_slot(
+                intent_name, 
+                slots, 
+                'firstName', 
+                session_attributes,
+                'Sorry I did not understand. May you repeat your first name once more.'
+            )
+        #     return {
+        #     'sessionState':{
+        #         'sessionAttributes': session_attributes,
+        #         'dialogAction':{
+        #             'slotToElicit': 'firstName',
+        #             'type':'ElicitSlot'
+        #         },
+        #         'intent':{
+        #             'confirmationState': 'Denied',
+        #             'name':intent_name,
+        #             'slots':slots,
+        #             'state':'InProgress'
+        #         }
+        #     },
+        #     'messages': [
+        #         "<speak> Sorry, I did not understand, May you repeat your first name to me once more, it would help if you could spell it out for me, like <say-as interpret-as='spell-out' Hello </say-as> </speak>"
+        #     ]
+        # }       
         return delegate(intent_name,intent_request['sessionState']['intent']['slots'] ,session_attributes)
 
     
-    logger.info(f'firstName={firstName}')
-
-    output = f'Nice to meet you {firstName}! How may I help you today?'
-    fulfillment_state = 'Fulfilled'
-
-    message = {'contentType':'PlainText', 'content':output}
+    firstName = firstName['value']['interpretedValue']
     
-    return close(intent_name, session_attributes, fulfillment_state, message)
+    logger.info(f'firstName={firstName}')
+    
+    output = f'Nice to meet you {firstName}! How may I help you today?'
+    
+    message = {
+        'contentType': 'PlainText',
+        'content':output
+    }
+    
+    fulfillment_state = 'InProgress'
+    
+    #return close(intent_name, session_attributes, fulfillment_state, message)
+    
+    #return elicit_slot('', slots, '', session_attributes, message)
+    return elicit_intent(session_attributes, message)
+
+    #return delegate(intent_name,intent_request['sessionState']['intent']['slots'] ,session_attributes)
+
 
 
 
@@ -579,32 +600,39 @@ def FollowupCheckBalance(intent_request):
             slots[validation_result['violatedSlot']] = None
             logger.debug(f'slots={slots}')
             logger.info('violatedSlot={}, message={}'.format(validation_result['violatedSlot'], validation_result['message']))
-            if validation_result['violatedSlot'] == 'firstName':
-                return {
-        'sessionState':{
-            'sessionAttributes': session_attributes,
-            'dialogAction':{
-                'slotElicitationStyle': 'SpellByLetter',
-                'slotToElicit': 'firstName',
-                'type':'ElicitSlot'
-            },
-            'intent':{
-                'confirmationState': 'Denied',
-                'name':intent_name,
-                'slots':slots,
-                'state':'InProgress'
-            }
-        },
-        'messages': [ validation_result['message'] ]
-    }       
-            else:
-                return elicit_slot(
-                    intent_name,
-                    slots,
-                    validation_result['violatedSlot'],
-                    session_attributes,
-                    validation_result['message']
-                )
+    #         if validation_result['violatedSlot'] == 'firstName':
+    #             return {
+    #     'sessionState':{
+    #         'sessionAttributes': session_attributes,
+    #         'dialogAction':{
+    #             'slotElicitationStyle': 'SpellByLetter',
+    #             'slotToElicit': 'firstName',
+    #             'type':'ElicitSlot'
+    #         },
+    #         'intent':{
+    #             'confirmationState': 'Denied',
+    #             'name':intent_name,
+    #             'slots':slots,
+    #             'state':'InProgress'
+    #         }
+    #     },
+    #     'messages': [ validation_result['message'] ]
+    # }       
+    #         else:
+    #             return elicit_slot(
+    #                 intent_name,
+    #                 slots,
+    #                 validation_result['violatedSlot'],
+    #                 session_attributes,
+    #                 validation_result['message']
+    #             )
+            return elicit_slot(
+                intent_name,
+                slots,
+                validation_result['violatedSlot'],
+                session_attributes,
+                'Sorry I did not understand. May you repeat your first name once more.'
+            )
         
         return delegate(intent_name,intent_request['sessionState']['intent']['slots'] ,session_attributes)
 
@@ -646,33 +674,39 @@ def ReplaceCard(intent_request):
             slots[validation_result['violatedSlot']] = None
             logger.debug(f'slots={slots}')
             logger.info('violatedSlot={}, message={}'.format(validation_result['violatedSlot'], validation_result['message']))
-            if validation_result['violatedSlot'] == 'firstName':
-                return {
-        'sessionState':{
-            'sessionAttributes': session_attributes,
-            'dialogAction':{
-                'slotElicitationStyle': 'SpellByLetter',
-                'slotToElicit': 'firstName',
-                'type':'ElicitSlot'
-            },
-            'intent':{
-                'confirmationState': 'Denied',
-                'name':intent_name,
-                'slots':slots,
-                'state':'InProgress'
-            }
-        },
-        'messages': [ validation_result['message'] ]
-    }       
-            else:
-                return elicit_slot(
-                    intent_name,
-                    slots,
-                    validation_result['violatedSlot'],
-                    session_attributes,
-                    validation_result['message']
-                )
-        
+    #         if validation_result['violatedSlot'] == 'firstName':
+    #             return {
+    #     'sessionState':{
+    #         'sessionAttributes': session_attributes,
+    #         'dialogAction':{
+    #             'slotElicitationStyle': 'SpellByLetter',
+    #             'slotToElicit': 'firstName',
+    #             'type':'ElicitSlot'
+    #         },
+    #         'intent':{
+    #             'confirmationState': 'Denied',
+    #             'name':intent_name,
+    #             'slots':slots,
+    #             'state':'InProgress'
+    #         }
+    #     },
+    #     'messages': [ validation_result['message'] ]
+    # }       
+    #         else:
+    #             return elicit_slot(
+    #                 intent_name,
+    #                 slots,
+    #                 validation_result['violatedSlot'],
+    #                 session_attributes,
+    #                 validation_result['message']
+    #             )
+            return elicit_slot(
+                intent_name,
+                slots,
+                validation_result['violatedSlot'],
+                session_attributes,
+                'Sorry I did not understand. May you repeat your first name once more.'
+            )
         
         return delegate(intent_name,intent_request['sessionState']['intent']['slots'] ,session_attributes)
 
@@ -708,17 +742,17 @@ def dispatch(intent_request):
     
 
     #Dispatch to bot's intent handlers
-
+    
     if intent_name == 'Greeting':
         return Greeting(intent_request)
 
-    elif intent_name == 'ReplaceCard':
+    if intent_name == 'ReplaceCard':
         return ReplaceCard(intent_request)
 
-    elif intent_name == 'CheckBalance':
+    if intent_name == 'CheckBalance':
         return CheckBalance(intent_request)
 
-    elif intent_name == 'FollowupCheckBalance':
+    if intent_name == 'FollowupCheckBalance':
        return FollowupCheckBalance(intent_request)
 
 
